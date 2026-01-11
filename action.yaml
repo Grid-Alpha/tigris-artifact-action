@@ -1,5 +1,6 @@
 name: "Tigris Artifact"
 description: "Upload or download artifacts to/from Fly.io Tigris S3"
+
 inputs:
   operation:
     description: "upload or download"
@@ -10,10 +11,52 @@ inputs:
   remote_path:
     description: "Path in the Tigris bucket"
     required: true
+
 runs:
   using: "composite"
   steps:
     - name: Run Tigris Artifact Script
       shell: bash
       run: |
-        ./entrypoint.sh "${{ inputs.operation }}" "${{ inputs.local_path }}" "${{ inputs.remote_path }}"
+        set -e
+
+        OPERATION="${{ inputs.operation }}"
+        LOCAL_PATH="${{ inputs.local_path }}"
+        REMOTE_PATH="${{ inputs.remote_path }}"
+
+        # Install AWS CLI if missing
+        if ! command -v aws &> /dev/null; then
+          echo "Installing AWS CLI..."
+          curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+          unzip -q awscliv2.zip
+          sudo ./aws/install
+        fi
+
+        # Validate required env vars
+        : "${TIGRIS_ACCESS_KEY_ID:?Missing TIGRIS_ACCESS_KEY_ID}"
+        : "${TIGRIS_SECRET_ACCESS_KEY:?Missing TIGRIS_SECRET_ACCESS_KEY}"
+        : "${TIGRIS_ENDPOINT:?Missing TIGRIS_ENDPOINT}"
+        : "${TIGRIS_BUCKET:?Missing TIGRIS_BUCKET}"
+
+        # Configure AWS CLI for Tigris
+        aws configure set aws_access_key_id "$TIGRIS_ACCESS_KEY_ID"
+        aws configure set aws_secret_access_key "$TIGRIS_SECRET_ACCESS_KEY"
+        aws configure set default.region us-east-1
+        aws configure set default.s3.endpoint_url "$TIGRIS_ENDPOINT"
+
+        # Perform operation
+        if [[ "$OPERATION" == "upload" ]]; then
+          echo "Uploading artifact..."
+          tar -czf /tmp/artifact.tar.gz -C "$LOCAL_PATH" .
+          aws s3 cp /tmp/artifact.tar.gz "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}"
+
+        elif [[ "$OPERATION" == "download" ]]; then
+          echo "Downloading artifact..."
+          aws s3 cp "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}" /tmp/artifact.tar.gz
+          mkdir -p "$LOCAL_PATH"
+          tar -xzf /tmp/artifact.tar.gz -C "$LOCAL_PATH"
+
+        else
+          echo "Invalid operation: $OPERATION (use upload or download)"
+          exit 1
+        fi
