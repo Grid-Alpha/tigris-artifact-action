@@ -1,0 +1,19 @@
+name: "Tigris Artifact"
+description: "Upload or download artifacts to/from Fly.io Tigris S3"
+inputs:
+  operation:
+    description: "upload or download"
+    required: true
+  local_path:
+    description: "Local path to upload or download to"
+    required: true
+  remote_path:
+    description: "Path in the Tigris bucket"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Run Tigris Artifact Script
+      shell: bash
+      run: |
+        ./.github/actions/tigris-artifact/entrypoint.sh "${{ inputs.operation }}" "${{ inputs.local_path }}" "${{ inputs.remote_path }}"
