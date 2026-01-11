@@ -16,4 +16,4 @@ runs:
     - name: Run Tigris Artifact Script
       shell: bash
       run: |
-        ./.github/actions/tigris-artifact/entrypoint.sh "${{ inputs.operation }}" "${{ inputs.local_path }}" "${{ inputs.remote_path }}"
+        ./entrypoint.sh "${{ inputs.operation }}" "${{ inputs.local_path }}" "${{ inputs.remote_path }}"
