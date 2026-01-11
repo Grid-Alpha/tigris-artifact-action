@@ -24,30 +24,34 @@ runs:
         LOCAL_PATH="${{ inputs.local_path }}"
         REMOTE_PATH="${{ inputs.remote_path }}"
 
-        # Install AWS CLI if missing
         if ! command -v aws &> /dev/null; then
-          echo "Installing AWS CLI..."
-          curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+          curl -s https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o awscliv2.zip
           unzip -q awscliv2.zip
           sudo ./aws/install
         fi
 
-        # Validate required env vars
         : "${TIGRIS_ACCESS_KEY_ID:?Missing TIGRIS_ACCESS_KEY_ID}"
         : "${TIGRIS_SECRET_ACCESS_KEY:?Missing TIGRIS_SECRET_ACCESS_KEY}"
         : "${TIGRIS_ENDPOINT:?Missing TIGRIS_ENDPOINT}"
         : "${TIGRIS_BUCKET:?Missing TIGRIS_BUCKET}"
 
-        # Configure AWS CLI for Tigris
         aws configure set aws_access_key_id "$TIGRIS_ACCESS_KEY_ID"
         aws configure set aws_secret_access_key "$TIGRIS_SECRET_ACCESS_KEY"
         aws configure set default.region us-east-1
         aws configure set default.s3.endpoint_url "$TIGRIS_ENDPOINT"
 
-        # Perform operation
         if [[ "$OPERATION" == "upload" ]]; then
           echo "Uploading artifact..."
-          tar -czf /tmp/artifact.tar.gz -C "$LOCAL_PATH" .
+
+          if [[ -d "$LOCAL_PATH" ]]; then
+            tar -czf /tmp/artifact.tar.gz -C "$LOCAL_PATH" .
+          elif [[ -f "$LOCAL_PATH" ]]; then
+            tar -czf /tmp/artifact.tar.gz -C "$(dirname "$LOCAL_PATH")" "$(basename "$LOCAL_PATH")"
+          else
+            echo "Local path does not exist: $LOCAL_PATH"
+            exit 1
+          fi
+
           aws s3 cp /tmp/artifact.tar.gz "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}"
 
         elif [[ "$OPERATION" == "download" ]]; then
@@ -57,6 +61,6 @@ runs:
           tar -xzf /tmp/artifact.tar.gz -C "$LOCAL_PATH"
 
         else
-          echo "Invalid operation: $OPERATION (use upload or download)"
+          echo "Invalid operation: $OPERATION"
           exit 1
         fi
