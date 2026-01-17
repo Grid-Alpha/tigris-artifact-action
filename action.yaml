@@ -41,9 +41,10 @@ runs:
           elif [[ "$RUNNER_OS" == "Windows" ]]; then
             curl -fsSL https://downloads.rclone.org/rclone-current-windows-amd64.zip -o rclone.zip
             unzip -q rclone.zip
-            mkdir -p /usr/local/bin
-            cp rclone-*/rclone.exe /usr/local/bin/rclone.exe
-
+            # Copy rclone.exe to runner temp folder and add to PATH
+            mkdir -p "$RUNNER_TEMP/bin"
+            cp rclone-*/rclone.exe "$RUNNER_TEMP/bin/rclone.exe"
+            export PATH="$RUNNER_TEMP/bin:$PATH"
           else
             echo "Unsupported OS: $RUNNER_OS"
             exit 1
