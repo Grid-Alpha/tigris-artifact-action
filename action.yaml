@@ -1,5 +1,5 @@
 name: "Tigris Artifact"
-description: "Upload or download artifacts to/from Fly.io Tigris S3"
+description: "Upload or download artifacts to/from Fly.io Tigris using rclone"
 
 inputs:
   operation:
@@ -15,7 +15,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Run Tigris Artifact Script
+    - name: Run Tigris Artifact Script (rclone)
       shell: bash
       run: |
         set -euo pipefail
@@ -24,52 +24,52 @@ runs:
         LOCAL_PATH="${{ inputs.local_path }}"
         REMOTE_PATH="${{ inputs.remote_path }}"
 
-        AWS_VERSION="$(aws --version 2>/dev/null || true)"
-
-        if [[ ! "$AWS_VERSION" =~ aws-cli/2 ]]; then
-          echo "Installing AWS CLI v2..."
-          curl -s https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o awscliv2.zip
-          unzip -q awscliv2.zip
-          sudo ./aws/install --update
-        fi
-
-
-        # Required environment variables
+        # Required env vars
         : "${TIGRIS_ACCESS_KEY_ID:?Missing TIGRIS_ACCESS_KEY_ID}"
         : "${TIGRIS_SECRET_ACCESS_KEY:?Missing TIGRIS_SECRET_ACCESS_KEY}"
         : "${TIGRIS_ENDPOINT:?Missing TIGRIS_ENDPOINT}"
         : "${TIGRIS_BUCKET:?Missing TIGRIS_BUCKET}"
 
-        # Configure credentials only (no AWS region / endpoint config)
-        aws configure set aws_access_key_id "$TIGRIS_ACCESS_KEY_ID"
-        aws configure set aws_secret_access_key "$TIGRIS_SECRET_ACCESS_KEY"
+        # Install rclone if missing
+        if ! command -v rclone >/dev/null 2>&1; then
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+        fi
 
-        ARTIFACT="/tmp/artifact.tar.gz"
+        # Create rclone config (ephemeral)
+        mkdir -p ~/.config/rclone
+
+        cat > ~/.config/rclone/rclone.conf <<EOF
+        [tigris]
+        type = s3
+        provider = Other
+        access_key_id = ${TIGRIS_ACCESS_KEY_ID}
+        secret_access_key = ${TIGRIS_SECRET_ACCESS_KEY}
+        endpoint = ${TIGRIS_ENDPOINT}
+        acl = private
+        force_path_style = true
+        EOF
 
         if [[ "$OPERATION" == "upload" ]]; then
           echo "Uploading artifact to Tigris..."
 
-          if [[ -d "$LOCAL_PATH" ]]; then
-            tar -czf "$ARTIFACT" -C "$LOCAL_PATH" .
-          elif [[ -f "$LOCAL_PATH" ]]; then
-            tar -czf "$ARTIFACT" -C "$(dirname "$LOCAL_PATH")" "$(basename "$LOCAL_PATH")"
-          else
+          if [[ ! -e "$LOCAL_PATH" ]]; then
             echo "Local path does not exist: $LOCAL_PATH"
             exit 1
           fi
 
-          aws s3 cp "$ARTIFACT" "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}" \
-            --endpoint-url "$TIGRIS_ENDPOINT" \
-            --no-multipart
+          rclone copy "$LOCAL_PATH" \
+            "tigris:${TIGRIS_BUCKET}/${REMOTE_PATH}" \
+            --progress
 
         elif [[ "$OPERATION" == "download" ]]; then
           echo "Downloading artifact from Tigris..."
 
-          aws s3 cp "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}" "$ARTIFACT" \
-            --endpoint-url "$TIGRIS_ENDPOINT"
-
           mkdir -p "$LOCAL_PATH"
-          tar -xzf "$ARTIFACT" -C "$LOCAL_PATH"
+
+          rclone copy \
+            "tigris:${TIGRIS_BUCKET}/${REMOTE_PATH}" \
+            "$LOCAL_PATH" \
+            --progress
 
         else
           echo "Invalid operation: $OPERATION"
