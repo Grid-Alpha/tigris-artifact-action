@@ -18,47 +18,55 @@ runs:
     - name: Run Tigris Artifact Script
       shell: bash
       run: |
-        set -e
+        set -euo pipefail
 
         OPERATION="${{ inputs.operation }}"
         LOCAL_PATH="${{ inputs.local_path }}"
         REMOTE_PATH="${{ inputs.remote_path }}"
 
-        if ! command -v aws &> /dev/null; then
+        # Install AWS CLI if missing
+        if ! command -v aws >/dev/null 2>&1; then
           curl -s https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o awscliv2.zip
           unzip -q awscliv2.zip
           sudo ./aws/install
         fi
 
+        # Required environment variables
         : "${TIGRIS_ACCESS_KEY_ID:?Missing TIGRIS_ACCESS_KEY_ID}"
         : "${TIGRIS_SECRET_ACCESS_KEY:?Missing TIGRIS_SECRET_ACCESS_KEY}"
         : "${TIGRIS_ENDPOINT:?Missing TIGRIS_ENDPOINT}"
         : "${TIGRIS_BUCKET:?Missing TIGRIS_BUCKET}"
 
+        # Configure credentials only (no AWS region / endpoint config)
         aws configure set aws_access_key_id "$TIGRIS_ACCESS_KEY_ID"
         aws configure set aws_secret_access_key "$TIGRIS_SECRET_ACCESS_KEY"
-        aws configure set default.region auto
-        aws configure set default.s3.endpoint_url "$TIGRIS_ENDPOINT"
+
+        ARTIFACT="/tmp/artifact.tar.gz"
 
         if [[ "$OPERATION" == "upload" ]]; then
-          echo "Uploading artifact..."
+          echo "Uploading artifact to Tigris..."
 
           if [[ -d "$LOCAL_PATH" ]]; then
-            tar -czf /tmp/artifact.tar.gz -C "$LOCAL_PATH" .
+            tar -czf "$ARTIFACT" -C "$LOCAL_PATH" .
           elif [[ -f "$LOCAL_PATH" ]]; then
-            tar -czf /tmp/artifact.tar.gz -C "$(dirname "$LOCAL_PATH")" "$(basename "$LOCAL_PATH")"
+            tar -czf "$ARTIFACT" -C "$(dirname "$LOCAL_PATH")" "$(basename "$LOCAL_PATH")"
           else
             echo "Local path does not exist: $LOCAL_PATH"
             exit 1
           fi
 
-          aws s3 cp /tmp/artifact.tar.gz "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}"
+          aws s3 cp "$ARTIFACT" "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}" \
+            --endpoint-url "$TIGRIS_ENDPOINT" \
+            --no-multipart
 
         elif [[ "$OPERATION" == "download" ]]; then
-          echo "Downloading artifact..."
-          aws s3 cp "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}" /tmp/artifact.tar.gz
+          echo "Downloading artifact from Tigris..."
+
+          aws s3 cp "s3://${TIGRIS_BUCKET}/${REMOTE_PATH}" "$ARTIFACT" \
+            --endpoint-url "$TIGRIS_ENDPOINT"
+
           mkdir -p "$LOCAL_PATH"
-          tar -xzf /tmp/artifact.tar.gz -C "$LOCAL_PATH"
+          tar -xzf "$ARTIFACT" -C "$LOCAL_PATH"
 
         else
           echo "Invalid operation: $OPERATION"
