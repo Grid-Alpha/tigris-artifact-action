@@ -37,7 +37,7 @@ runs:
 
         aws configure set aws_access_key_id "$TIGRIS_ACCESS_KEY_ID"
         aws configure set aws_secret_access_key "$TIGRIS_SECRET_ACCESS_KEY"
-        aws configure set default.region us-east-1
+        aws configure set default.region auto
         aws configure set default.s3.endpoint_url "$TIGRIS_ENDPOINT"
 
         if [[ "$OPERATION" == "upload" ]]; then
