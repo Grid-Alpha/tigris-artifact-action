@@ -6,16 +6,16 @@ inputs:
     description: "upload or download"
     required: true
   local_path:
-    description: "Local path to upload or download to"
+    description: "Local file or directory"
     required: true
   remote_path:
-    description: "Path in the Tigris bucket"
+    description: "Object path in the Tigris bucket"
     required: true
 
 runs:
   using: "composite"
   steps:
-    - name: Run Tigris Artifact Script (rclone)
+    - name: Run Tigris Artifact Script
       shell: bash
       run: |
         set -euo pipefail
@@ -24,18 +24,35 @@ runs:
         LOCAL_PATH="${{ inputs.local_path }}"
         REMOTE_PATH="${{ inputs.remote_path }}"
 
-        # Required env vars
         : "${TIGRIS_ACCESS_KEY_ID:?Missing TIGRIS_ACCESS_KEY_ID}"
         : "${TIGRIS_SECRET_ACCESS_KEY:?Missing TIGRIS_SECRET_ACCESS_KEY}"
         : "${TIGRIS_ENDPOINT:?Missing TIGRIS_ENDPOINT}"
         : "${TIGRIS_BUCKET:?Missing TIGRIS_BUCKET}"
 
-        # Install rclone if missing
+        # -------------------------------
+        # Install rclone (cross-platform)
+        # -------------------------------
         if ! command -v rclone >/dev/null 2>&1; then
-          curl -fsSL https://rclone.org/install.sh | sudo bash
+          echo "Installing rclone on $RUNNER_OS"
+
+          if [[ "$RUNNER_OS" == "Linux" || "$RUNNER_OS" == "macOS" ]]; then
+            curl -fsSL https://rclone.org/install.sh | sudo bash
+
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            curl -fsSL https://downloads.rclone.org/rclone-current-windows-amd64.zip -o rclone.zip
+            unzip -q rclone.zip
+            mkdir -p /usr/local/bin
+            cp rclone-*/rclone.exe /usr/local/bin/rclone.exe
+
+          else
+            echo "Unsupported OS: $RUNNER_OS"
+            exit 1
+          fi
         fi
 
-        # Create rclone config (ephemeral)
+        # -------------------------------
+        # rclone config (ephemeral)
+        # -------------------------------
         mkdir -p ~/.config/rclone
 
         cat > ~/.config/rclone/rclone.conf <<EOF
@@ -45,12 +62,15 @@ runs:
         access_key_id = ${TIGRIS_ACCESS_KEY_ID}
         secret_access_key = ${TIGRIS_SECRET_ACCESS_KEY}
         endpoint = ${TIGRIS_ENDPOINT}
-        acl = private
         force_path_style = true
+        acl = private
         EOF
 
+        # -------------------------------
+        # Upload / Download
+        # -------------------------------
         if [[ "$OPERATION" == "upload" ]]; then
-          echo "Uploading artifact to Tigris..."
+          echo "Uploading to Tigris..."
 
           if [[ ! -e "$LOCAL_PATH" ]]; then
             echo "Local path does not exist: $LOCAL_PATH"
@@ -62,7 +82,7 @@ runs:
             --progress
 
         elif [[ "$OPERATION" == "download" ]]; then
-          echo "Downloading artifact from Tigris..."
+          echo "Downloading from Tigris..."
 
           mkdir -p "$LOCAL_PATH"
 
