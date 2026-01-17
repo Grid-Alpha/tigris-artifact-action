@@ -24,12 +24,15 @@ runs:
         LOCAL_PATH="${{ inputs.local_path }}"
         REMOTE_PATH="${{ inputs.remote_path }}"
 
-        # Install AWS CLI if missing
-        if ! command -v aws >/dev/null 2>&1; then
+        AWS_VERSION="$(aws --version 2>/dev/null || true)"
+
+        if [[ ! "$AWS_VERSION" =~ aws-cli/2 ]]; then
+          echo "Installing AWS CLI v2..."
           curl -s https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o awscliv2.zip
           unzip -q awscliv2.zip
-          sudo ./aws/install
+          sudo ./aws/install --update
         fi
+
 
         # Required environment variables
         : "${TIGRIS_ACCESS_KEY_ID:?Missing TIGRIS_ACCESS_KEY_ID}"
